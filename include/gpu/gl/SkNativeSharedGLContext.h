@@ -32,6 +32,9 @@ struct GrGLNativeContext {
 typedef CGLContextObj GrGLSharedContext;
 typedef IOSurfaceRef GrGLSharedSurface;
 #elif defined(SK_BUILD_FOR_ANDROID)
+struct GrGLNativeContext {
+    EGLDisplay *fDisplay;
+};
 typedef EGLContext GrGLSharedContext;
 typedef void* GrGLPixelFormat;
 typedef void* GrGLSharedSurface;
