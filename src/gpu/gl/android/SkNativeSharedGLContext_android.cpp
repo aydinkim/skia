@@ -52,11 +52,11 @@ void SkNativeSharedGLContext::destroyGLContext() {
 }
 
 const GrGLInterface* SkNativeSharedGLContext::createGLContext(const int width, const int height) {
-    fDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    //fDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
 
-    EGLint majorVersion;
-    EGLint minorVersion;
-    eglInitialize(fDisplay, &majorVersion, &minorVersion);
+    //EGLint majorVersion;
+    //EGLint minorVersion;
+    //eglInitialize(fDisplay, &majorVersion, &minorVersion);
 
     EGLint numConfigs;
     static const EGLint configAttribs[] = {
@@ -76,16 +76,14 @@ const GrGLInterface* SkNativeSharedGLContext::createGLContext(const int width, c
         EGL_CONTEXT_CLIENT_VERSION, 2,
         EGL_NONE
     };
-    //FIXME(aydin.kim): need to check 3rd parameter. need to context sharing?
-    fContext = eglCreateContext(fDisplay, surfaceConfig, EGL_NO_CONTEXT, contextAttribs);
-
 
     static const EGLint surfaceAttribs[] = {
-        EGL_WIDTH, 1,
-        EGL_HEIGHT, 1,
+        EGL_WIDTH, width,
+        EGL_HEIGHT, height,
         EGL_NONE
     };
     fSurface = eglCreatePbufferSurface(fDisplay, surfaceConfig, surfaceAttribs);
+    fContext = eglCreateContext(fDisplay, surfaceConfig, EGL_NO_CONTEXT, contextAttribs);
 
     eglMakeCurrent(fDisplay, fSurface, fSurface, fContext);
 
@@ -223,7 +221,7 @@ GrContext *SkNativeSharedGLContext::getGrContext() {
 
 GrGLSharedSurface SkNativeSharedGLContext::stealSurface() {
     // Render the texture to the default framebuffer.
-    int viewport[4];
+    /*int viewport[4];
     SK_GL(*this, GetIntegerv(GR_GL_VIEWPORT, viewport));
     int width = viewport[2], height = viewport[3];
     SK_GL(*this, BindFramebuffer(GR_GL_READ_FRAMEBUFFER, fFBO));
@@ -232,10 +230,13 @@ GrGLSharedSurface SkNativeSharedGLContext::stealSurface() {
     SK_GL(*this, Flush());
     SK_GL(*this, BindFramebuffer(GR_GL_FRAMEBUFFER, 0));
     EGLSurface eglsurface = fSurface;
-    eglDestroySurface(fDisplay, fSurface);
+    //eglDestroySurface(fDisplay, fSurface);
     fSurface = EGL_NO_SURFACE;
-    fDisplay = EGL_NO_DISPLAY;
-    return eglsurface;
+    //fDisplay = EGL_NO_DISPLAY;
+    return eglsurface;*/
+
+    SK_GL(*this, Flush());
+    return fSurface;
 }
 
 void SkNativeSharedGLContext::makeCurrent() const {

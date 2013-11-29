@@ -36,7 +36,6 @@ struct GrGLNativeContext {
     EGLDisplay *fDisplay;
 };
 typedef EGLContext GrGLSharedContext;
-typedef void* GrGLPixelFormat;
 typedef void* GrGLSharedSurface;
 #elif defined(SK_BUILD_FOR_UNIX)
 struct GrGLNativeContext {
