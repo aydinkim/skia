@@ -234,9 +234,22 @@ GrGLSharedSurface SkNativeSharedGLContext::stealSurface() {
     fSurface = EGL_NO_SURFACE;
     //fDisplay = EGL_NO_DISPLAY;
     return eglsurface;*/
+    
+    if (fGL && fFBO) {
+        SK_GL(*this, BindFramebuffer(GR_GL_FRAMEBUFFER, fFBO));
+        SK_GL(*this, FramebufferTexture2D(GR_GL_FRAMEBUFFER,
+                    GR_GL_COLOR_ATTACHMENT0,
+                    GR_GL_TEXTURE_RECTANGLE_ARB,
+                    0,
+                    0));
+    }
 
-    SK_GL(*this, Flush());
-    return fSurface;
+    //SK_GL(*this, Flush());
+    EGLNativePixmapType surface;
+    eglCopyBuffers(fDisplay, fSurface, surface);
+    fTextureID = 0;
+    fSurface = NULL;
+    return surface;
 }
 
 void SkNativeSharedGLContext::makeCurrent() const {
