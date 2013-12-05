@@ -7,11 +7,13 @@
  */
 #include "gl/SkNativeSharedGLContext.h"
 #include "gl/GrGLUtil.h"
+#include <EGL/eglext.h>
 
 SkNativeSharedGLContext::SkNativeSharedGLContext(GrGLNativeContext& nativeContext)
     : fContext(EGL_NO_CONTEXT)
     , fDisplay(nativeContext.fDisplay)
     , fSurface(EGL_NO_SURFACE)
+    , fEGLImage(NULL)
     , fGrContext(NULL)
     , fGL(NULL)
     , fFBO(0)
@@ -52,12 +54,6 @@ void SkNativeSharedGLContext::destroyGLContext() {
 }
 
 const GrGLInterface* SkNativeSharedGLContext::createGLContext(const int width, const int height) {
-    //fDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-
-    //EGLint majorVersion;
-    //EGLint minorVersion;
-    //eglInitialize(fDisplay, &majorVersion, &minorVersion);
-
     EGLint numConfigs;
     static const EGLint configAttribs[] = {
         EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
@@ -82,8 +78,8 @@ const GrGLInterface* SkNativeSharedGLContext::createGLContext(const int width, c
         EGL_HEIGHT, height,
         EGL_NONE
     };
-    fSurface = eglCreatePbufferSurface(fDisplay, surfaceConfig, surfaceAttribs);
     fContext = eglCreateContext(fDisplay, surfaceConfig, EGL_NO_CONTEXT, contextAttribs);
+    fSurface = eglCreatePbufferSurface(fDisplay, surfaceConfig, surfaceAttribs);
 
     eglMakeCurrent(fDisplay, fSurface, fSurface, fContext);
 
@@ -141,6 +137,11 @@ bool SkNativeSharedGLContext::init(int width, int height) {
                                           GR_GL_COLOR_ATTACHMENT0,
                                           GR_GL_TEXTURE_2D,
                                           fTextureID, 0));
+
+        //Initilize EGLimageKHR for sharing texture between threads or processes
+        EGLint eglImgAttrs[] = { EGL_IMAGE_PRESERVED_KHR, EGL_TRUE, EGL_NONE, EGL_NONE };
+        fEGLImage = eglCreateImageKHR(fDisplay, fContext, EGL_GL_TEXTURE_2D_KHR, (EGLClientBuffer)fTextureID, eglImgAttrs);
+
         SK_GL(*this, GenRenderbuffers(1, &fDepthStencilBufferID));
         SK_GL(*this, BindRenderbuffer(GR_GL_RENDERBUFFER, fDepthStencilBufferID));
 
@@ -220,36 +221,19 @@ GrContext *SkNativeSharedGLContext::getGrContext() {
 }
 
 GrGLSharedSurface SkNativeSharedGLContext::stealSurface() {
-    // Render the texture to the default framebuffer.
-    /*int viewport[4];
-    SK_GL(*this, GetIntegerv(GR_GL_VIEWPORT, viewport));
-    int width = viewport[2], height = viewport[3];
-    SK_GL(*this, BindFramebuffer(GR_GL_READ_FRAMEBUFFER, fFBO));
-    SK_GL(*this, BindFramebuffer(GR_GL_DRAW_FRAMEBUFFER, 0));
-    SK_GL(*this, BlitFramebuffer(0, 0, width, height, 0, 0, width, height, GR_GL_COLOR_BUFFER_BIT, GR_GL_NEAREST));
-    SK_GL(*this, Flush());
-    SK_GL(*this, BindFramebuffer(GR_GL_FRAMEBUFFER, 0));
-    EGLSurface eglsurface = fSurface;
-    //eglDestroySurface(fDisplay, fSurface);
-    fSurface = EGL_NO_SURFACE;
-    //fDisplay = EGL_NO_DISPLAY;
-    return eglsurface;*/
-    
     if (fGL && fFBO) {
         SK_GL(*this, BindFramebuffer(GR_GL_FRAMEBUFFER, fFBO));
         SK_GL(*this, FramebufferTexture2D(GR_GL_FRAMEBUFFER,
                     GR_GL_COLOR_ATTACHMENT0,
-                    GR_GL_TEXTURE_RECTANGLE_ARB,
+                    GR_GL_TEXTURE_2D,
                     0,
                     0));
     }
 
-    //SK_GL(*this, Flush());
-    EGLNativePixmapType surface;
-    eglCopyBuffers(fDisplay, fSurface, surface);
+    EGLImageKHR image = fEGLImage;
     fTextureID = 0;
     fSurface = NULL;
-    return surface;
+    return image;
 }
 
 void SkNativeSharedGLContext::makeCurrent() const {
