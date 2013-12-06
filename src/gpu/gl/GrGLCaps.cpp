@@ -199,6 +199,7 @@ void GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
                                     ctxInfo.hasExtension("GL_ARB_vertex_array_object");
     } else {
         fVertexArrayObjectSupport = ctxInfo.hasExtension("GL_OES_vertex_array_object");
+        fVertexArrayObjectSupport = false;
     }
 
     this->initFSAASupport(ctxInfo, gli);

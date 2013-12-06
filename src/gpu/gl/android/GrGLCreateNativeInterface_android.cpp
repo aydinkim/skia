@@ -27,7 +27,7 @@ const GrGLInterface* GrGLCreateNativeInterface() {
         interface->fBindBuffer = glBindBuffer;
         interface->fBindTexture = glBindTexture;
 #ifndef SK_BUILD_FOR_ANDROID
-        interface->fBindVertexArray = glBindVertexArrayOES;
+//        interface->fBindVertexArray = glBindVertexArrayOES;
 #endif
         interface->fBlendColor = glBlendColor;
         interface->fBlendFunc = glBlendFunc;
@@ -48,7 +48,7 @@ const GrGLInterface* GrGLCreateNativeInterface() {
         interface->fDeleteShader = glDeleteShader;
         interface->fDeleteTextures = glDeleteTextures;
 #ifndef SK_BUILD_FOR_ANDROID
-        interface->fDeleteVertexArrays = glDeleteVertexArraysOES;
+//        interface->fDeleteVertexArrays = glDeleteVertexArraysOES;
 #endif
         interface->fDepthMask = glDepthMask;
         interface->fDisable = glDisable;
@@ -63,7 +63,7 @@ const GrGLInterface* GrGLCreateNativeInterface() {
         interface->fGenBuffers = glGenBuffers;
         interface->fGenTextures = glGenTextures;
 #ifndef SK_BUILD_FOR_ANDROID
-        interface->fGenVertexArrays = glGenVertexArraysOES;
+//        interface->fGenVertexArrays = glGenVertexArraysOES;
 #endif
         interface->fGetBufferParameteriv = glGetBufferParameteriv;
         interface->fGetError = glGetError;
