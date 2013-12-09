@@ -7,16 +7,65 @@
  */
 #include "gl/SkNativeSharedGLContext.h"
 #include "gl/GrGLUtil.h"
+#include <dlfcn.h>
+#include <EGL/eglext.h>
+
+enum {
+    HAL_PIXEL_FORMAT_RGBA_8888          = 1,
+    HAL_PIXEL_FORMAT_RGBX_8888          = 2,
+    HAL_PIXEL_FORMAT_RGB_888            = 3,
+    HAL_PIXEL_FORMAT_RGB_565            = 4,
+    HAL_PIXEL_FORMAT_BGRA_8888          = 5,
+    HAL_PIXEL_FORMAT_RGBA_5551          = 6,
+    HAL_PIXEL_FORMAT_RGBA_4444          = 7,
+};
+
+enum {
+    /* buffer is never read in software */
+    GRALLOC_USAGE_SW_READ_NEVER   = 0x00000000,
+    /* buffer is rarely read in software */
+    GRALLOC_USAGE_SW_READ_RARELY  = 0x00000002,
+    /* buffer is often read in software */
+    GRALLOC_USAGE_SW_READ_OFTEN   = 0x00000003,
+    /* mask for the software read values */
+    GRALLOC_USAGE_SW_READ_MASK    = 0x0000000F,
+
+    /* buffer is never written in software */
+    GRALLOC_USAGE_SW_WRITE_NEVER  = 0x00000000,
+    /* buffer is never written in software */
+    GRALLOC_USAGE_SW_WRITE_RARELY = 0x00000020,
+    /* buffer is never written in software */
+    GRALLOC_USAGE_SW_WRITE_OFTEN  = 0x00000030,
+    /* mask for the software write values */
+    GRALLOC_USAGE_SW_WRITE_MASK   = 0x000000F0,
+
+    /* buffer will be used as an OpenGL ES texture */
+    GRALLOC_USAGE_HW_TEXTURE      = 0x00000100,
+    /* buffer will be used as an OpenGL ES render target */
+    GRALLOC_USAGE_HW_RENDER       = 0x00000200,
+    /* buffer will be used by the 2D hardware blitter */
+    GRALLOC_USAGE_HW_2D           = 0x00000400,
+    /* buffer will be used with the framebuffer device */
+    GRALLOC_USAGE_HW_FB           = 0x00001000,
+    /* mask for the software usage bit-mask */
+    GRALLOC_USAGE_HW_MASK         = 0x00001F00,
+};
 
 SkNativeSharedGLContext::SkNativeSharedGLContext(GrGLNativeContext& nativeContext)
     : fContext(EGL_NO_CONTEXT)
     , fDisplay(nativeContext.fDisplay)
     , fSurface(EGL_NO_SURFACE)
+    , fEGLImage(NULL)
+    , mHandle(NULL)
     , fGrContext(NULL)
     , fGL(NULL)
     , fFBO(0)
     , fTextureID(0)
     , fDepthStencilBufferID(0) {
+        void* handle = dlopen("/system/lib/libui.so", RTLD_LAZY);
+        fGraphicBufferGetNativeBuffer = (pfnGraphicBufferGetNativeBuffer)dlsym(handle, "_ZNK7android13GraphicBuffer15getNativeBufferEv");
+        fGraphicBufferCtor = (pfnGraphicBufferCtor)dlsym(handle, "_ZN7android13GraphicBufferC1Ejjij");
+
 }
 
 SkNativeSharedGLContext::~SkNativeSharedGLContext() {
@@ -52,12 +101,6 @@ void SkNativeSharedGLContext::destroyGLContext() {
 }
 
 const GrGLInterface* SkNativeSharedGLContext::createGLContext(const int width, const int height) {
-    //fDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-
-    //EGLint majorVersion;
-    //EGLint minorVersion;
-    //eglInitialize(fDisplay, &majorVersion, &minorVersion);
-
     EGLint numConfigs;
     static const EGLint configAttribs[] = {
         EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
@@ -82,8 +125,8 @@ const GrGLInterface* SkNativeSharedGLContext::createGLContext(const int width, c
         EGL_HEIGHT, height,
         EGL_NONE
     };
-    fSurface = eglCreatePbufferSurface(fDisplay, surfaceConfig, surfaceAttribs);
     fContext = eglCreateContext(fDisplay, surfaceConfig, EGL_NO_CONTEXT, contextAttribs);
+    fSurface = eglCreatePbufferSurface(fDisplay, surfaceConfig, surfaceAttribs);
 
     eglMakeCurrent(fDisplay, fSurface, fSurface, fContext);
 
@@ -124,6 +167,14 @@ bool SkNativeSharedGLContext::init(int width, int height) {
             SK_GL_RET(*this, error, GetError());
         } while (GR_GL_NO_ERROR != error);
 
+        if (!mHandle) {
+            mHandle = malloc(1024/*GRAPHIC_BUFFER_SIZE*/);
+            fGraphicBufferCtor(mHandle, width, height, HAL_PIXEL_FORMAT_RGBX_8888, GRALLOC_USAGE_SW_READ_OFTEN|GRALLOC_USAGE_SW_WRITE_OFTEN|GRALLOC_USAGE_HW_TEXTURE|GRALLOC_USAGE_HW_RENDER|GRALLOC_USAGE_HW_2D); 
+            if (!fGraphicBufferCtor) {
+                fprintf(stderr, "fGraphicBufferCtor doesn't exist!\n");
+            }
+        }
+
         SK_GL(*this, GenFramebuffers(1, &fFBO));
         SK_GL(*this, BindFramebuffer(GR_GL_FRAMEBUFFER, fFBO));
         SK_GL(*this, GenTextures(1, &fTextureID));
@@ -133,6 +184,7 @@ bool SkNativeSharedGLContext::init(int width, int height) {
                                 width, height, 0,
                                 GR_GL_RGBA, GR_GL_UNSIGNED_BYTE, 
                                 NULL));
+
         SK_GL(*this, TexParameteri(GR_GL_TEXTURE_2D, GR_GL_TEXTURE_WRAP_S, GR_GL_CLAMP_TO_EDGE));
         SK_GL(*this, TexParameteri(GR_GL_TEXTURE_2D, GR_GL_TEXTURE_WRAP_T, GR_GL_CLAMP_TO_EDGE));
         SK_GL(*this, TexParameteri(GR_GL_TEXTURE_2D, GR_GL_TEXTURE_MAG_FILTER, GR_GL_LINEAR));
@@ -141,6 +193,7 @@ bool SkNativeSharedGLContext::init(int width, int height) {
                                           GR_GL_COLOR_ATTACHMENT0,
                                           GR_GL_TEXTURE_2D,
                                           fTextureID, 0));
+
         SK_GL(*this, GenRenderbuffers(1, &fDepthStencilBufferID));
         SK_GL(*this, BindRenderbuffer(GR_GL_RENDERBUFFER, fDepthStencilBufferID));
 
@@ -184,6 +237,7 @@ bool SkNativeSharedGLContext::init(int width, int height) {
         SK_GL(*this, Viewport(0, 0, width, height));
         SK_GL(*this, ClearStencil(0));
         SK_GL(*this, Clear(GR_GL_STENCIL_BUFFER_BIT));
+        
 
         SK_GL_RET(*this, error, GetError());
         GrGLenum status;
@@ -220,36 +274,104 @@ GrContext *SkNativeSharedGLContext::getGrContext() {
 }
 
 GrGLSharedSurface SkNativeSharedGLContext::stealSurface() {
-    // Render the texture to the default framebuffer.
-    /*int viewport[4];
-    SK_GL(*this, GetIntegerv(GR_GL_VIEWPORT, viewport));
-    int width = viewport[2], height = viewport[3];
-    SK_GL(*this, BindFramebuffer(GR_GL_READ_FRAMEBUFFER, fFBO));
-    SK_GL(*this, BindFramebuffer(GR_GL_DRAW_FRAMEBUFFER, 0));
-    SK_GL(*this, BlitFramebuffer(0, 0, width, height, 0, 0, width, height, GR_GL_COLOR_BUFFER_BIT, GR_GL_NEAREST));
-    SK_GL(*this, Flush());
-    SK_GL(*this, BindFramebuffer(GR_GL_FRAMEBUFFER, 0));
-    EGLSurface eglsurface = fSurface;
-    //eglDestroySurface(fDisplay, fSurface);
-    fSurface = EGL_NO_SURFACE;
-    //fDisplay = EGL_NO_DISPLAY;
-    return eglsurface;*/
-    
     if (fGL && fFBO) {
         SK_GL(*this, BindFramebuffer(GR_GL_FRAMEBUFFER, fFBO));
-        SK_GL(*this, FramebufferTexture2D(GR_GL_FRAMEBUFFER,
-                    GR_GL_COLOR_ATTACHMENT0,
-                    GR_GL_TEXTURE_RECTANGLE_ARB,
-                    0,
-                    0));
+        //SK_GL(*this, FramebufferTexture2D(GR_GL_FRAMEBUFFER,
+        //            GR_GL_COLOR_ATTACHMENT0,
+        //            GR_GL_TEXTURE_2D,
+        //            0,
+        //            0));
     }
 
-    //SK_GL(*this, Flush());
-    EGLNativePixmapType surface;
-    eglCopyBuffers(fDisplay, fSurface, surface);
+    int viewport[4];
+    SK_GL(*this, GetIntegerv(GR_GL_VIEWPORT, viewport));
+    int width = viewport[2], height = viewport[3];
+    //glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    //glReadPixels(0, 0, width, height, GR_GL_RGBA, GR_GL_UNSIGNED_BYTE, fSharedSurface);
+    //EGLNativePixmapType fNativePixmap = fSharedSurface;
+
+/*
+    SK_GL(*this, GenRenderbuffers(1, &fColorBuffer));
+    SK_GL(*this, BindRenderbuffer(GR_GL_RENDERBUFFER, fColorBuffer));
+    SK_GL(*this, RenderbufferStorage(GR_GL_RENDERBUFFER,
+                GR_GL_RGBA,
+                width, height));
+
+    SK_GL(*this, FramebufferRenderbuffer(GR_GL_FRAMEBUFFER,
+                        GR_GL_COLOR_ATTACHMENT0,
+                        GR_GL_RENDERBUFFER,
+                        fColorBuffer));
+
+    fprintf(stderr, "Color buffer_pre: %p\n", fColorBuffer);
+    SK_GL(*this, Flush());
+    SK_GL(*this, BindFramebuffer(GR_GL_FRAMEBUFFER, 0));
+    fprintf(stderr, "Color buffer_post: %p\n", fColorBuffer);
+*/
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    GrGLuint texture;
+    SK_GL(*this, GenTextures(1, &texture));
+    SK_GL(*this, BindTexture(GR_GL_TEXTURE_2D, texture));
+    SK_GL(*this, TexImage2D(GR_GL_TEXTURE_2D, 0,
+                GR_GL_RGBA,
+                width, height, 0,
+                GR_GL_RGBA, GR_GL_UNSIGNED_BYTE,
+                NULL));
+    //SK_GL(*this, CopyTexSubImage2D(GR_GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height));
+    SK_GL(*this, FramebufferTexture2D(GR_GL_FRAMEBUFFER,
+                GR_GL_COLOR_ATTACHMENT0,
+                GR_GL_TEXTURE_2D,
+                texture, 0));
+    SK_GL(*this, Flush());
+
+    fprintf(stderr, "passing stealSurface!\n", texture);
+    //glBindTexture(GL_TEXTURE_2D, 0);
+    EGLSyncKHR fence = eglCreateSyncKHR(fDisplay, EGL_SYNC_FENCE_KHR, NULL);
+    EGLint result = eglClientWaitSyncKHR(fDisplay, fence, EGL_SYNC_FLUSH_COMMANDS_BIT_KHR, EGL_FOREVER_KHR);
+
+    if(result == EGL_FALSE) {
+        fprintf(stderr, "error waiting for fence!\n");
+    }
+
+    EGLint value = 0;
+    result = eglGetSyncAttribKHR(fDisplay, fence, EGL_SYNC_STATUS_KHR, &value);
+    if(result == EGL_FALSE) {
+        fprintf(stderr, "error getting sync attrib!\n");
+    }
+
+    if(value == EGL_SIGNALED_KHR) {
+        EGLint eglImgAttrs[] = { EGL_IMAGE_PRESERVED_KHR, EGL_TRUE, EGL_NONE, EGL_NONE };
+        fEGLImage = eglCreateImageKHR(fDisplay, fContext, EGL_GL_TEXTURE_2D_KHR, (EGLClientBuffer)fTextureID, eglImgAttrs);
+    }
+
+
+    if (!fEGLImage) {
+        fprintf(stderr, "fEGLImage doesn't exist!\n");
+    }
+
+    eglDestroySyncKHR(fDisplay, fence);
+    /*if(mHandle) {
+        EGLint eglImgAttrs[] = { EGL_IMAGE_PRESERVED_KHR, EGL_TRUE, EGL_NONE, EGL_NONE };
+        void* nativeBuffer = fGraphicBufferGetNativeBuffer(mHandle);
+        if (!fGraphicBufferGetNativeBuffer) {
+            fprintf(stderr, "fGraphicBufferGetNativeBuffer doesn't exist!\n");
+        }
+        if (nativeBuffer) {
+            fEGLImage = eglCreateImageKHR(fDisplay, EGL_NO_CONTEXT, EGL_NATIVE_BUFFER_ANDROID, (EGLClientBuffer)nativeBuffer, eglImgAttrs);
+            if (!fEGLImage) {
+                fprintf(stderr, "fEGLImage doesn't exist!\n");
+            }
+        }
+        else {
+            fprintf(stderr, "nativebuffer doesn't exist!\n");
+        }
+    }
+    else {
+        fprintf(stderr, "mHandle doesn't exist!\n");
+    }*/
     fTextureID = 0;
     fSurface = NULL;
-    return surface;
+    return fEGLImage;
 }
 
 void SkNativeSharedGLContext::makeCurrent() const {
@@ -260,5 +382,7 @@ void SkNativeSharedGLContext::makeCurrent() const {
 
 void SkNativeSharedGLContext::flush() const {
     this->makeCurrent();
-    SK_GL(*this, Flush());
+
+    fprintf(stderr, "called glFinish!!!!!\n");
+    SK_GL(*this, Finish());
 }

@@ -17,6 +17,7 @@
 #elif defined(SK_BUILD_FOR_ANDROID) || defined(SK_BUILD_FOR_NACL)
     #include <GLES2/gl2.h>
     #include <EGL/egl.h>
+    #include <EGL/eglext.h>
 #elif defined(SK_BUILD_FOR_UNIX)
     #include <X11/Xlib.h>
     #include <GL/glx.h>
@@ -36,7 +37,7 @@ struct GrGLNativeContext {
     EGLDisplay *fDisplay;
 };
 typedef EGLContext GrGLSharedContext;
-typedef EGLNativePixmapType GrGLSharedSurface;
+typedef EGLImageKHR GrGLSharedSurface;
 #elif defined(SK_BUILD_FOR_UNIX)
 struct GrGLNativeContext {
     Display *fDisplay;
@@ -52,6 +53,12 @@ class SkNativeSharedGLContext : public SkRefCnt {
 public:
     explicit SkNativeSharedGLContext(GrGLNativeContext& nativeContext);
     virtual ~SkNativeSharedGLContext();
+
+    typedef void* (*pfnGraphicBufferGetNativeBuffer)(void*);
+    pfnGraphicBufferGetNativeBuffer fGraphicBufferGetNativeBuffer;
+
+    typedef void (*pfnGraphicBufferCtor)(void*, uint32_t w, uint32_t h, uint32_t format, uint32_t usage);
+    pfnGraphicBufferCtor fGraphicBufferCtor;
 
     virtual bool init(int width, int height);
     virtual unsigned int getFBOID() const { return fFBO; }
@@ -99,6 +106,9 @@ private:
     EGLContext fContext;
     EGLDisplay fDisplay;
     EGLSurface fSurface;
+    EGLImageKHR fEGLImage;
+    void* mHandle;
+    GrGLuint fColorBuffer;
 #elif defined(SK_BUILD_FOR_UNIX)
     GLXContext fContext;
     Display* fDisplay;
